@@ -89,6 +89,15 @@ class PositiveSeasonality:
             dims="fourier_mode" if "fourier_mode" in coords else None
         )
         
+        # Create fourier_contribution for API compatibility
+        # This is needed for prior predictive sampling and maintains compatibility
+        # with the original MMM implementation
+        pm.Deterministic(
+            "fourier_contribution",
+            fourier_matrix * gamma_fourier,
+            dims=("date", "fourier_mode") if "date" in coords and "fourier_mode" in coords else None
+        )
+        
         # Linear combination (can be negative)
         linear_combination = pt.dot(fourier_matrix, gamma_fourier)
         
