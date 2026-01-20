@@ -38,13 +38,17 @@ def patch_mmm_seasonality(mmm_instance, prior_scale=0.05):
         result = original_build(X, y)
         
         with mmm_instance.model:
-            # Check if gamma_fourier already exists from default config
-            # If it does, remove it so we can replace it with our custom implementation
-            if 'gamma_fourier' in mmm_instance.model.named_vars:
-                # Remove the default gamma_fourier variable from named_vars dict
-                del mmm_instance.model.named_vars['gamma_fourier']
+            # Delete only the variables that will conflict with our custom implementation
+            # gamma_fourier and yearly_seasonality_contribution will be recreated
+            # Leave other variables (like fourier_contribution) alone since we don't recreate them
+            variables_to_remove = ['gamma_fourier', 'yearly_seasonality_contribution']
+            
+            for var_name in variables_to_remove:
+                if var_name in mmm_instance.model.named_vars:
+                    del mmm_instance.model.named_vars[var_name]
             
             # Now create our custom positive seasonality
+            # This creates gamma_fourier and yearly_seasonality_contribution with exponential transform
             pos_seasonality = PositiveSeasonality(
                 n_order=mmm_instance.yearly_seasonality,
                 prior_scale=prior_scale
