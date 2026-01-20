@@ -38,10 +38,14 @@ def patch_mmm_seasonality(mmm_instance, prior_scale=0.05):
         result = original_build(X, y)
         
         with mmm_instance.model:
-            # Delete only the variables that will conflict with our custom implementation
-            # gamma_fourier and yearly_seasonality_contribution will be recreated
-            # Leave other variables (like fourier_contribution) alone since we don't recreate them
-            variables_to_remove = ['gamma_fourier', 'yearly_seasonality_contribution']
+            # Delete ALL seasonality-related variables from the original build
+            # Even though we don't recreate fourier_contribution, we must delete it
+            # because it contains references to the old gamma_fourier
+            variables_to_remove = [
+                'gamma_fourier', 
+                'yearly_seasonality_contribution',
+                'fourier_contribution'  # Must delete - contains broken references
+            ]
             
             for var_name in variables_to_remove:
                 if var_name in mmm_instance.model.named_vars:
