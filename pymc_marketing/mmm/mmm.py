@@ -714,11 +714,18 @@ class BaseMMM(BaseValidateMMM):
                 dims=("date", *self.yearly_fourier.prior.dims),
             )
 
+        # Get the linear combination from fourier
+        linear_combination = self.yearly_fourier.apply(
+            dayofyear, result_callback=create_deterministic
+        )
+        
+        # Apply exponential transformation to guarantee positive seasonality
+        # This ensures baseline (intercept + seasonality) is always positive
+        positive_seasonality = 0.01 + pt.exp(linear_combination)
+
         return pm.Deterministic(
             name="yearly_seasonality_contribution",
-            var=self.yearly_fourier.apply(
-                dayofyear, result_callback=create_deterministic
-            ),
+            var=positive_seasonality,
             dims="date",
         )
 
