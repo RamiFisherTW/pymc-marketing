@@ -11,16 +11,16 @@ This fork modifies pymc-marketing to guarantee that seasonality contributions ar
 **File: `pymc_marketing/mmm/mmm.py`**
 
 - **Method**: `_build_yearly_seasonality_contribution()` (lines ~717-729)
-- **Change**: Added scaled exponential transformation to seasonality output
-- **Formula**: `seasonality = exp(0.1 * linear_fourier_combination)`
-- **Result**: Guarantees positive seasonality values with controlled magnitude
+- **Change**: Added softplus transformation to seasonality output
+- **Formula**: `seasonality = softplus(linear_fourier_combination)` where `softplus(x) = log(1 + exp(x))`
+- **Result**: Guarantees positive seasonality values for additive model with natural bounds
 
 **File: `pymc_marketing/mmm/multidimensional.py`**
 
 - **Method**: Yearly seasonality section in `build_model()` (lines ~1487-1499)
-- **Change**: Added scaled exponential transformation to seasonality output
-- **Formula**: `seasonality = exp(0.1 * linear_fourier_combination)`
-- **Result**: Guarantees positive seasonality values with controlled magnitude for geo-level models
+- **Change**: Added softplus transformation to seasonality output
+- **Formula**: `seasonality = softplus(linear_fourier_combination)` where `softplus(x) = log(1 + exp(x))`
+- **Result**: Guarantees positive seasonality values for additive geo-level models with natural bounds
 
 ### 2. Implementation Details
 
@@ -31,26 +31,29 @@ seasonality(t) = Σ[γᵢ * fourier_feature_i(t)]
 # Can be negative! Range: (-∞, +∞)
 ```
 
-**Positive Seasonality (Custom):**
+**Positive Seasonality (Custom - Softplus):**
 
 ```python
-scale_factor = 0.1
-seasonality(t) = exp(scale_factor * Σ[γᵢ * fourier_feature_i(t)])
-# Always positive! Range: (0, +∞) with typical values in [0.74, 1.35]
+seasonality(t) = softplus(Σ[γᵢ * fourier_feature_i(t)])
+# where softplus(x) = log(1 + exp(x))
+# Always positive! Range: (0, +∞) with typical values in [0, 10]
+# For additive model: mu = intercept + channels + seasonality
 ```
 
 **Key Properties:**
 
-- ✅ Exponential function guarantees output > 0
-- ✅ Scale factor (0.1) controls magnitude, preventing explosion
-- ✅ Centered around 1.0 (multiplicative effect)
+- ✅ Softplus function guarantees output > 0
+- ✅ **Linear growth for large positive inputs** (softplus(x) ≈ x when x >> 0) - **no explosion**
+- ✅ **Smooth lower bound** (softplus(x) ≈ 0 when x << 0) - natural minimum
+- ✅ **Perfect for additive models** - outputs in absolute scale (0-10), not multiplicative
 - ✅ Preserves seasonal pattern (peaks and troughs)
+- ✅ Smooth everywhere (excellent gradient for MCMC)
 - ✅ Maintains API compatibility (same variable names)
 - ✅ Works with both single-dimension and geo-level models
 
 ### 3. Recommended Prior Configuration
 
-With the scaled exponential transformation, you can use **standard priors** on `gamma_fourier`:
+With the softplus transformation, you can use **standard priors** on `gamma_fourier`:
 
 ```python
 # Non-geo model
@@ -71,11 +74,15 @@ With the scaled exponential transformation, you can use **standard priors** on `
 
 **Why this works:**
 
-- Scale factor (0.1) controls the magnitude, not the prior
+- Softplus prevents exponential explosion (grows **linearly** for large positive x)
 - With `σ=1.0`, linear_combo typically in `[-3, 3]`
-- After `exp(0.1 * linear_combo)`: seasonality range ≈ [0.74, 1.35] (~±30% variation)
-- Provides reasonable seasonal patterns without explosion
-- More flexible than overly tight priors
+- After `softplus(linear_combo)`:
+  - `softplus(-3)` ≈ 0.05 (near zero)
+  - `softplus(0)` ≈ 0.69
+  - `softplus(3)` ≈ 3.05
+- **Typical seasonality range: [0, 10]** - appropriate for additive contribution
+- Bounds emerge naturally from softplus properties + prior regularization
+- No risk of explosion since large x → softplus(x) ≈ x (linear, not exponential)
 
 ### 4. Files Removed (No Longer Needed)
 
@@ -85,14 +92,17 @@ The following files were created during initial patch development but are **no l
 - `pymc_marketing/mmm/patches/positive_seasonality_patch.py` (can be deleted)
 - `pymc_marketing/mmm/patches/__init__.py` (can be deleted)
 
-The exponential transformation is now **built directly into the core MMM classes**.
+The softplus transformation is now **built directly into the core MMM classes**.
 
 ## Benefits
 
-- ✅ **Prevents negative baseline**: baseline = intercept * seasonality > 0
-- ✅ **Controlled magnitude**: Scale factor prevents exponential explosion
-- ✅ **Multiplicative effect**: Seasonality centered at 1.0 (natural interpretation)
+- ✅ **Guarantees positive seasonality**: softplus(x) > 0 for all x
+- ✅ **No explosion**: Linear growth for large inputs (unlike exponential)
+- ✅ **Additive model friendly**: Outputs in absolute scale (0-10) perfect for adding to baseline
+- ✅ **Natural bounds**: No hardcoded limits - bounds emerge from function + priors
+- ✅ **Prevents negative baseline**: mu = intercept + channels + softplus(seasonality) ≥ intercept
 - ✅ **Simple & robust**: No complex patching, just source modification
+- ✅ **Excellent MCMC properties**: Smooth gradient everywhere
 - ✅ **Maintainable**: Easy to understand and debug
 - ✅ **Backward compatible**: Same API, same variable names
 - ✅ **Works for all models**: Both MMM and multidimensional MMM
@@ -136,11 +146,18 @@ seasonality = posterior["yearly_seasonality_contribution"]
 # Check all values are positive
 assert (seasonality > 0).all(), "Seasonality should be positive!"
 
-# Check values are in reasonable range
+# Check values are in reasonable range for additive model
 print(f"Seasonality range: [{seasonality.min():.3f}, {seasonality.max():.3f}]")
 print(f"Seasonality mean: {seasonality.mean():.3f}")
 print(f"Seasonality std: {seasonality.std():.3f}")
 
-# Typical expected values: mean ≈ 1.0, range ≈ [0.7, 1.4]
-assert seasonality.max() < 5, "Seasonality should not be too high!"
+# Typical expected values for additive model: range ≈ [0, 10], mean ≈ 2-5
+# Should be small relative to intercept
+assert seasonality.min() >= 0, "Seasonality should be non-negative!"
+assert seasonality.max() < 50, "Seasonality should not be too high for additive model!"
+
+# Check seasonality contribution is reasonable relative to baseline
+baseline = posterior["intercept"]
+seasonality_pct = (seasonality.mean() / baseline.mean()) * 100
+print(f"Seasonality contribution: {seasonality_pct:.1f}% of intercept")
 ```

@@ -719,11 +719,12 @@ class BaseMMM(BaseValidateMMM):
             dayofyear, result_callback=create_deterministic
         )
         
-        # Apply scaled exponential transformation to guarantee positive seasonality
-        # Scale factor controls the magnitude of seasonal variation
-        # With scale_factor=0.1, typical linear_combo in [-3,3] gives seasonality in [0.74, 1.35]
-        scale_factor = 0.1
-        positive_seasonality = pt.exp(scale_factor * linear_combination)
+        # Apply softplus transformation to guarantee positive seasonality
+        # Softplus(x) = log(1 + exp(x)) ensures output > 0 for additive model
+        # For large positive x: softplus(x) ≈ x (linear growth, no explosion)
+        # For large negative x: softplus(x) ≈ 0 (smooth lower bound)
+        # Typical output range: [0, 10] which is appropriate for additive seasonality
+        positive_seasonality = pt.softplus(linear_combination)
 
         return pm.Deterministic(
             name="yearly_seasonality_contribution",
