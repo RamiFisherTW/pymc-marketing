@@ -1493,7 +1493,7 @@ class MMM(RegressionModelBuilder):
                 # abs(x) ensures output > 0 for additive model while preserving magnitude
                 # This transformation is symmetric and doesn't change optimization dynamics
                 # Unlike softplus, abs doesn't cause gradient asymmetry that leads to explosion
-                positive_seasonality = pt.abs_(linear_combination)
+                positive_seasonality = pt.abs(linear_combination)
                 
                 yearly_seasonality_contribution = pm.Deterministic(
                     name="yearly_seasonality_contribution",
