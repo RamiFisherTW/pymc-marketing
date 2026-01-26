@@ -728,7 +728,7 @@ class BaseMMM(BaseValidateMMM):
 
         return pm.Deterministic(
             name="yearly_seasonality_contribution",
-            var=positive_seasonality,
+            var=linear_combination,
             dims="date",
         )
 

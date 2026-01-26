@@ -1498,7 +1498,7 @@ class MMM(RegressionModelBuilder):
                 
                 yearly_seasonality_contribution = pm.Deterministic(
                     name="yearly_seasonality_contribution",
-                    var=positive_seasonality,
+                    var=linear_combination,
                     dims=("date", *self.dims),
                 )
                 mu_var += yearly_seasonality_contribution
