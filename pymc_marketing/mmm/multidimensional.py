@@ -1489,9 +1489,11 @@ class MMM(RegressionModelBuilder):
                     dayofyear, result_callback=create_deterministic
                 )
                 
-                # Apply exponential transformation to guarantee positive seasonality
-                # This ensures baseline (intercept + seasonality) is always positive
-                positive_seasonality = 0.01 + pt.exp(linear_combination)
+                # Apply scaled exponential transformation to guarantee positive seasonality
+                # Scale factor controls the magnitude of seasonal variation
+                # With scale_factor=0.1, typical linear_combo in [-3,3] gives seasonality in [0.74, 1.35]
+                scale_factor = 0.1
+                positive_seasonality = pt.exp(scale_factor * linear_combination)
                 
                 yearly_seasonality_contribution = pm.Deterministic(
                     name="yearly_seasonality_contribution",
