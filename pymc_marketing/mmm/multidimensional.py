@@ -1489,16 +1489,15 @@ class MMM(RegressionModelBuilder):
                     dayofyear, result_callback=create_deterministic
                 )
                 
-                # Apply softplus transformation to guarantee positive seasonality
-                # Softplus(x) = log(1 + exp(x)) ensures output > 0 for additive model
-                # For large positive x: softplus(x) ≈ x (linear growth, no explosion)
-                # For large negative x: softplus(x) ≈ 0 (smooth lower bound)
-                # Typical output range: [0, 10] which is appropriate for additive seasonality
-                positive_seasonality = pt.softplus(linear_combination)
+                # Apply absolute value transformation to guarantee positive seasonality
+                # abs(x) ensures output > 0 for additive model while preserving magnitude
+                # This transformation is symmetric and doesn't change optimization dynamics
+                # Unlike softplus, abs doesn't cause gradient asymmetry that leads to explosion
+                positive_seasonality = pt.abs_(linear_combination)
                 
                 yearly_seasonality_contribution = pm.Deterministic(
                     name="yearly_seasonality_contribution",
-                    var=linear_combination,
+                    var=positive_seasonality,
                     dims=("date", *self.dims),
                 )
                 mu_var += yearly_seasonality_contribution

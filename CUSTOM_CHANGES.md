@@ -11,16 +11,16 @@ This fork modifies pymc-marketing to guarantee that seasonality contributions ar
 **File: `pymc_marketing/mmm/mmm.py`**
 
 - **Method**: `_build_yearly_seasonality_contribution()` (lines ~717-729)
-- **Change**: Added softplus transformation to seasonality output
-- **Formula**: `seasonality = softplus(linear_fourier_combination)` where `softplus(x) = log(1 + exp(x))`
-- **Result**: Guarantees positive seasonality values for additive model with natural bounds
+- **Change**: Added absolute value transformation to seasonality output
+- **Formula**: `seasonality = abs(linear_fourier_combination)`
+- **Result**: Guarantees positive seasonality values for additive model while preserving magnitude
 
 **File: `pymc_marketing/mmm/multidimensional.py`**
 
-- **Method**: Yearly seasonality section in `build_model()` (lines ~1487-1499)
-- **Change**: Added softplus transformation to seasonality output
-- **Formula**: `seasonality = softplus(linear_fourier_combination)` where `softplus(x) = log(1 + exp(x))`
-- **Result**: Guarantees positive seasonality values for additive geo-level models with natural bounds
+- **Method**: Yearly seasonality section in `build_model()` (lines ~1487-1501)
+- **Change**: Added absolute value transformation to seasonality output
+- **Formula**: `seasonality = abs(linear_fourier_combination)`
+- **Result**: Guarantees positive seasonality values for additive geo-level models while preserving magnitude
 
 ### 2. Implementation Details
 
@@ -31,35 +31,35 @@ seasonality(t) = Σ[γᵢ * fourier_feature_i(t)]
 # Can be negative! Range: (-∞, +∞)
 ```
 
-**Positive Seasonality (Custom - Softplus):**
+**Positive Seasonality (Custom - Absolute Value):**
 
 ```python
-seasonality(t) = softplus(Σ[γᵢ * fourier_feature_i(t)])
-# where softplus(x) = log(1 + exp(x))
-# Always positive! Range: (0, +∞) with typical values in [0, 10]
+seasonality(t) = abs(Σ[γᵢ * fourier_feature_i(t)])
+# Always positive! Range: [0, +∞)
 # For additive model: mu = intercept + channels + seasonality
 ```
 
 **Key Properties:**
 
-- ✅ Softplus function guarantees output > 0
-- ✅ **Linear growth for large positive inputs** (softplus(x) ≈ x when x >> 0) - **no explosion**
-- ✅ **Smooth lower bound** (softplus(x) ≈ 0 when x << 0) - natural minimum
-- ✅ **Perfect for additive models** - outputs in absolute scale (0-10), not multiplicative
-- ✅ Preserves seasonal pattern (peaks and troughs)
-- ✅ Smooth everywhere (excellent gradient for MCMC)
+- ✅ Absolute value function guarantees output ≥ 0
+- ✅ **Preserves magnitude** - if input is ±X, output is |X|
+- ✅ **Symmetric transformation** - doesn't bias MCMC optimization
+- ✅ **No numerical overflow** - unlike softplus which caused explosion for large inputs
+- ✅ **Simple and interpretable** - easier to understand than softplus
+- ✅ **Perfect for additive models** - outputs in absolute scale matching original
+- ✅ Preserves seasonal pattern magnitude (peaks and troughs)
 - ✅ Maintains API compatibility (same variable names)
 - ✅ Works with both single-dimension and geo-level models
 
 ### 3. Recommended Prior Configuration
 
-With the softplus transformation, you can use **standard priors** on `gamma_fourier`:
+With the absolute value transformation, you can use **tight priors** on `gamma_fourier`:
 
 ```python
 # Non-geo model
 "gamma_fourier": {
     "dist": "Normal",
-    "kwargs": {"mu": 0, "sigma": 1.0},  # Standard normal
+    "kwargs": {"mu": 0, "sigma": 0.01},  # Tight prior
     "dims": "fourier_mode"
 }
 
@@ -67,22 +67,22 @@ With the softplus transformation, you can use **standard priors** on `gamma_four
 "gamma_fourier": Prior(
     "Normal",
     mu=0,
-    sigma=1.0,  # Standard normal for geo variation
+    sigma=0.01,  # Tight prior for geo variation
     dims=("geo", "fourier_mode"),
 )
 ```
 
 **Why this works:**
 
-- Softplus prevents exponential explosion (grows **linearly** for large positive x)
-- With `σ=1.0`, linear_combo typically in `[-3, 3]`
-- After `softplus(linear_combo)`:
-  - `softplus(-3)` ≈ 0.05 (near zero)
-  - `softplus(0)` ≈ 0.69
-  - `softplus(3)` ≈ 3.05
-- **Typical seasonality range: [0, 10]** - appropriate for additive contribution
-- Bounds emerge naturally from softplus properties + prior regularization
-- No risk of explosion since large x → softplus(x) ≈ x (linear, not exponential)
+- Absolute value ensures positivity while preserving magnitude from linear combination
+- With `σ=0.01`, gamma_fourier typically in `[-0.03, 0.03]`
+- Linear combination range depends on data but stays controlled by tight priors
+- After `abs(linear_combo)`: output is same magnitude as input, just positive
+- **Tight priors (σ=0.01) control the magnitude** - prevents extreme values
+- **Symmetric transformation** - doesn't bias MCMC optimization like softplus did
+- **No numerical overflow** - unlike softplus which caused explosion for large inputs
+- **No gradient asymmetry** - abs() has equal treatment of positive/negative inputs
+- Magnitude controlled entirely by the prior on gamma_fourier
 
 ### 4. Files Removed (No Longer Needed)
 
@@ -92,7 +92,7 @@ The following files were created during initial patch development but are **no l
 - `pymc_marketing/mmm/patches/positive_seasonality_patch.py` (can be deleted)
 - `pymc_marketing/mmm/patches/__init__.py` (can be deleted)
 
-The softplus transformation is now **built directly into the core MMM classes**.
+The absolute value transformation is now **built directly into the core MMM classes**.
 
 ## Benefits
 
